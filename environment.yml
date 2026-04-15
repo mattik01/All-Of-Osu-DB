@@ -1,0 +1,20 @@
+name: all-of-osu-db
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - pip
+  # CLI + config
+  - typer
+  - pydantic-settings
+  # Layer A (MySQL) + Layer B (Postgres) drivers
+  - sqlalchemy
+  - pymysql
+  - psycopg
+  - tqdm
+  # Lint / test
+  - ruff
+  - pytest
+  # Pip-only deps (not on conda-forge)
+  - pip:
+      - osu-data

@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "all-of-osu-db"
+version = "0.1.0"
+description = "Two-layer osu! reference database (ppy dump mirror + curated slice)."
+requires-python = ">=3.11"
+dependencies = [
+    "typer",
+    "pydantic-settings",
+    "sqlalchemy",
+    "pymysql",
+    "psycopg[binary]",
+    "tqdm",
+]
+
+[project.scripts]
+all-of-osu = "all_of_osu_db.cli:app"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100

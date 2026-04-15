@@ -1,0 +1,95 @@
+# --- Secrets / config ---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+client_secret*.json
+token*.json
+credentials*.json
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+build/
+dist/
+.Python
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Virtual envs
+.venv/
+venv/
+env/
+ENV/
+
+# uv / poetry / pipenv
+.uv/
+.python-version
+
+# Type checkers / linters / formatters
+.mypy_cache/
+.pyright/
+.ruff_cache/
+.pytest_cache/
+.tox/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+
+# Jupyter
+.ipynb_checkpoints/
+
+# --- Project data / artifacts ---
+data/
+!data/.gitkeep
+dumps/
+logs/
+*.log
+*.sqlite
+*.sqlite3
+*.db
+
+# Bulk dump artifacts
+*.sql
+*.sql.gz
+*.sql.bz2
+*.tar
+*.tar.gz
+*.zip
+*.parquet
+
+# …but our own project DDL/views live in sql/ — keep those tracked.
+!sql/*.sql
+
+# Docker volumes (Eve-ning/osu-data writes local volumes)
+osu-data-volume/
+postgres-data/
+
+# Beatmap / score binaries
+*.osr
+*.osz
+*.osu
+
+# Renderer outputs (none yet, but keep consistent with sibling project)
+*.mp4
+*.mkv
+*.webm
+
+# Local compose overrides
+docker-compose.override.yml
+
+# Claude Code per-user settings
+.claude/settings.local.json
+
+# --- Editor / OS ---
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db

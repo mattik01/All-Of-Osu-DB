@@ -1,0 +1,18 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: all-of-osu-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${LAYER_B_PG_USER}
+      POSTGRES_PASSWORD: ${LAYER_B_PG_PASSWORD}
+      POSTGRES_DB: ${LAYER_B_PG_DB}
+    ports:
+      - "${LAYER_B_PG_PORT}:5432"
+    volumes:
+      - ./postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${LAYER_B_PG_USER} -d ${LAYER_B_PG_DB}"]
+      interval: 10s
+      timeout: 3s
+      retries: 5

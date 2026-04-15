@@ -1,0 +1,35 @@
+# Layer B only. Layer A's MySQL is managed by the Eve-ning/osu-data pip
+# package, which runs its own Docker container on port 3308.
+#
+# Copy to docker-compose.yml, adjust the password, and run `docker compose up -d`.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: all-of-osu-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: osu
+      POSTGRES_PASSWORD: change_me_local_only
+      POSTGRES_DB: all_of_osu
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U osu -d all_of_osu"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+# Optional: uncomment to run PostgREST for SQL-over-HTTP later.
+#  postgrest:
+#    image: postgrest/postgrest:latest
+#    depends_on:
+#      postgres:
+#        condition: service_healthy
+#    environment:
+#      PGRST_DB_URI: postgres://osu:change_me_local_only@postgres:5432/all_of_osu
+#      PGRST_DB_ANON_ROLE: osu
+#    ports:
+#      - "3000:3000"
