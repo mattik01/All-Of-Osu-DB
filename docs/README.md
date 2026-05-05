@@ -1,6 +1,11 @@
-# docs/ — knowledge base
+# docs/ — domain documentation
 
-Curated osu! domain knowledge distilled from two sibling repos:
+Two top-level sections:
+
+- **`knowledge-base/`** — curated osu! domain facts distilled from two sibling repos.
+- **`OWC/`** — osu! World Cup tournament reference: mappool structure and slot characterisations. Drives the Liquipedia mappool scraper in `src/all_of_osu_db/layerA/liquipedia.py`.
+
+The `knowledge-base/` content draws from:
 
 - **[`mattik01/Osu-RecSys-Study`](https://github.com/mattik01/Osu-RecSys-Study)** — prior recommender-system work on ppy's monthly MySQL dumps; source of SQL patterns, derived metrics, dataset characteristics.
 - **[`mattik01/osu--skintool`](https://github.com/mattik01/osu--skintool)** — skin browsing / hitsound-extraction tool; source of `.osu` file-format details, hitsound rules, skin element registry, rendering math.
@@ -49,6 +54,11 @@ knowledge-base/
 │
 └─ analysis/
     └─ dataset-and-biases.md      — dump volumes, long tail, farm/popularity bias
+
+OWC/
+└─ Mappool/                  osu! World Cup mappool reference
+    ├─ pool-structure.md          — pool sizes per stage, era history, match flow
+    └─ slot-guide.md              — per-slot skill descriptions + glossary
 ```
 
 ## How this relates to the repo

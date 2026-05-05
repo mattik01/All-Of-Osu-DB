@@ -12,6 +12,9 @@ dependencies:
   - pymysql
   - psycopg
   - tqdm
+  # Liquipedia scraper (Layer A: tournament mappools)
+  - httpx
+  - mwparserfromhell
   # Lint / test
   - ruff
   - pytest

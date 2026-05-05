@@ -1,6 +1,6 @@
 # Sources
 
-Every fact in `knowledge-base/` traces back to one of these two repos (unless explicitly marked as canonical osu! knowledge outside them).
+Every fact in `knowledge-base/` traces back to one of two sibling repos (unless explicitly marked as canonical osu! knowledge outside them). Facts in `OWC/Mappool/` trace to a third group of public web sources, listed at the bottom.
 
 ## `mattik01/Osu-RecSys-Study`
 
@@ -38,6 +38,21 @@ Files mined for this knowledge base:
 | `src/main/resources/default-skin/skin.ini`, `!README.txt` | bundled default skin values |
 | `docs/OSU_SKIN_RENDERING.md`, `docs/ARCHITECTURE.md` | playfield size, curve type names, nightcore-mod audio rules |
 | `CLAUDE.md`, root `README.md` | project-level context |
+
+## Liquipedia + Reddit + osu! wiki (for `OWC/Mappool/`)
+
+Public web sources used to compose `docs/OWC/Mappool/pool-structure.md` and `docs/OWC/Mappool/slot-guide.md`. These are also the page families the Liquipedia scraper (`src/all_of_osu_db/layerA/liquipedia.py`) targets.
+
+| Source | What it gave us |
+| --- | --- |
+| [Reddit /r/osugame, "OWC Mappool Viewer's Guide" (Cytusine + OP, 2022)](https://www.reddit.com/r/osugame/) | Spine of the slot characterisations and example maps; statement of the 2022 `NM5 → FM2` rebalance and Azer's "less skill-isolated slots" framing. |
+| [Liquipedia `Osu_World_Cup` root + per-edition pages](https://liquipedia.net/osu/Osu_World_Cup) | Per-edition pool sizes, slot labels, tiebreaker songs, edition-page slug pattern (`/1`, `/2`, `/3`, `/<year>`). Verified format-stability of the `* '''SLOT''' : [URL ...]` plain-bullet wikitext from 2020 onward. |
+| [Liquipedia MediaWiki API (`/osu/api.php`)](https://liquipedia.net/osu/api.php) | Wikitext source for all per-edition pages; structured page-revision IDs for deterministic re-scraping. |
+| [osu! wiki `Tournaments/OWC/<edition>` pages](https://osu.ppy.sh/wiki/en/Tournaments/OWC) | Authoritative per-edition format announcements and rule changes; cross-reference for Liquipedia data. |
+| [osu! World Cup 2022 announcement / forum thread](https://osu.ppy.sh/community/forums) | Source for the explicit "less isolated skillsets" rebalance statement quoted in the reddit guide. |
+| Bandcamp / YouTube — Yooh "RPG", Camellia "OOPARTS", Camellia "Operation: Zenithfall" | Confirmation that specific OWC tiebreaker songs were commissioned originals released around tournament time. |
+
+The reddit guide reflects the 2022 OWC framing; pool composition / slot identity for editions 2011–2014 (pre-bracket era) and 2025 (group-stage rebalance) was reconstructed from Liquipedia per-edition pages and the corresponding osu! wiki entries.
 
 ## Not in this knowledge base (on purpose)
 

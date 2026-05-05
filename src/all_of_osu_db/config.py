@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -19,6 +21,14 @@ class Settings(BaseSettings):
     layer_b_pg_user: str = "osu"
     layer_b_pg_password: str = ""
     layer_b_pg_db: str = "all_of_osu"
+
+    liquipedia_user_agent: str = (
+        "All-Of-Osu-DB/0.1 (https://github.com/mattik01/All-Of-Osu-DB; "
+        "glaeser.matteo@googlemail.com)"
+    )
+    liquipedia_cache_dir: Path = Path("data/layerA/liquipedia/_cache")
+    liquipedia_output_dir: Path = Path("data/layerA/liquipedia")
+    liquipedia_min_request_interval_s: float = 30.0
 
     @property
     def layer_a_url(self) -> str:

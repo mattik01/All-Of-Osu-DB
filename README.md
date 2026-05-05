@@ -108,6 +108,7 @@ Any future osu! project of mine that wants read-only access to beatmap / score
 | Source                   | Role                                | Cadence   | Status       |
 | ------------------------ | ----------------------------------- | --------- | ------------ |
 | data.ppy.sh MySQL dump   | Primary: beatmaps, scores, users    | Monthly   | v1 target    |
+| Liquipedia (osu! wiki)   | Tournament mappools (OWC first)     | On demand | Phase 1: OWC |
 | osu! API v2              | Incremental top-ups between dumps   | On demand | Future       |
 | osu!track API            | Player rank/performance history     | On demand | Future       |
 | catboy.best / osu.direct | Beatmap audio/asset mirror          | On demand | Future       |
@@ -157,6 +158,8 @@ All-Of-Osu-DB/
 ├─ environment.yml                 ← conda env `all-of-osu-db`, Python 3.11+
 ├─ pyproject.toml                  ← package metadata + CLI entry (not yet created)
 ├─ docs/
+│   ├─ knowledge-base/             ← osu! domain facts (mods, dump schema, etc.)
+│   ├─ OWC/Mappool/                ← osu! World Cup mappool reference
 │   ├─ schema.md                   ← Layer B columns + Layer A provenance
 │   └─ runbook.md                  ← monthly refresh playbook
 ├─ sql/
@@ -169,6 +172,8 @@ All-Of-Osu-DB/
 │   ├─ layerA/
 │   │   ├─ __init__.py
 │   │   ├─ ppy_dump.py             ← thin wrapper around `osu-data` CLI
+│   │   ├─ liquipedia.py           ← OWC mappool scraper (JSON output, v1)
+│   │   ├─ liquipedia_parsers/     ← wikitext dispatcher + per-format parsers
 │   │   └─ (future) osu_api_v2.py, osu_track.py
 │   ├─ etl/
 │   │   ├─ __init__.py
@@ -190,6 +195,13 @@ all-of-osu validate               # row counts, spot checks
 all-of-osu export-parquet         # optional Parquet artifact from Layer B
 all-of-osu layerA ppy-dump \
     --mode osu --version top_10000 --ymd 2026_04_01
+
+# Liquipedia tournament mappools (Layer A, JSON output)
+all-of-osu layerA liquipedia owc                       # all OWC editions
+all-of-osu layerA liquipedia owc --year 2024
+all-of-osu layerA liquipedia owc --year 2024 --no-qualifier
+all-of-osu layerA liquipedia owc --refresh-cache
+all-of-osu layerA liquipedia owc --dry-run
 ```
 
 Implement with `typer` or `click`; exact choice when coding begins.
@@ -407,6 +419,13 @@ When a second source needs to land in Layer A:
      and a §8-style contract table for consumers.
 
 Keep each source isolated enough that removing it is a one-file deletion.
+
+**Wiki / web sources** (e.g. Liquipedia for tournament mappools) deviate from
+the "MySQL schema per source" pattern: they have no SQL dump to mirror. For
+v1 such sources sink to a JSON file cache under `data/layerA/<source>/` and
+delay any MySQL/Postgres schema commitment until the shape stabilises across
+real data. Document the deviation in `docs/sources.md`. The OWC scraper
+(`src/all_of_osu_db/layerA/liquipedia.py`) is the first instance of this.
 
 ---
 

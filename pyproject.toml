@@ -14,6 +14,8 @@ dependencies = [
     "pymysql",
     "psycopg[binary]",
     "tqdm",
+    "httpx",
+    "mwparserfromhell",
 ]
 
 [project.scripts]
@@ -21,6 +23,10 @@ all-of-osu = "all_of_osu_db.cli:app"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
 
 [tool.ruff]
 line-length = 100
