@@ -13,12 +13,18 @@ liquipedia_app = typer.Typer(
 layerA_app.add_typer(liquipedia_app, name="liquipedia")
 
 
-@app.command()
-def etl() -> None:
-    """Run Layer A → Layer B ETL for beatmap_reference."""
-    from .etl import run_etl
+etl_app = typer.Typer(help="Layer A → Layer B ETL.", no_args_is_help=True)
+app.add_typer(etl_app, name="etl")
 
-    run_etl()
+
+@etl_app.command("tournament-mappool")
+def etl_tournament_mappool() -> None:
+    """Project Layer A tournament_pick → Layer B tournament_mappool (Postgres)."""
+    from .etl.tournament_mappool import run_etl
+
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    counts = run_etl()
+    typer.echo(f"Projected {counts['projected']}, upserted {counts['upserted']}")
 
 
 @app.command()
@@ -80,6 +86,82 @@ def liquipedia_owc(
         f"Scraped {len(manifest['editions'])} edition(s), "
         f"{total_rounds} round(s), {total_entries} map entries."
     )
+
+
+@liquipedia_app.command("export-csv")
+def liquipedia_export_csv(
+    output: str | None = typer.Option(
+        None,
+        "--output",
+        "-o",
+        help="CSV output path. Default: data/layerA/liquipedia/owc_mappool.csv",
+    ),
+    include_unknown: bool = typer.Option(
+        False,
+        "--include-unknown/--exclude-unknown",
+        help="Include parser warning rows (slot=UNKNOWN). Default excluded.",
+    ),
+) -> None:
+    """Flatten all scraped OWC mappool JSON into a single CSV."""
+    from pathlib import Path
+    from .layerA.liquipedia import export_owc_csv
+
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    out_path, n = export_owc_csv(
+        output_path=Path(output) if output else None,
+        include_unknown=include_unknown,
+    )
+    typer.echo(f"Wrote {n} rows to {out_path}")
+
+
+@liquipedia_app.command("load-sqlite")
+def liquipedia_load_sqlite(
+    input_path: str | None = typer.Option(
+        None, "--input", "-i",
+        help="Verified CSV input (default: data/layerA/liquipedia/owc_mappool_verified.csv).",
+    ),
+    output_path: str | None = typer.Option(
+        None, "--output", "-o",
+        help="SQLite output path (default: data/layerA/liquipedia/liquipedia.sqlite).",
+    ),
+) -> None:
+    """Load the verified Liquipedia CSV into the Layer A SQLite mirror."""
+    from pathlib import Path
+    from .layerA.liquipedia_load import load_to_sqlite
+
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    counts = load_to_sqlite(
+        input_path=Path(input_path) if input_path else None,
+        output_path=Path(output_path) if output_path else None,
+    )
+    typer.echo("SQLite tournament_pick row counts:")
+    for k, v in sorted(counts.items()):
+        typer.echo(f"  {k:10s} {v}")
+
+
+@liquipedia_app.command("verify-mappool")
+def liquipedia_verify_mappool(
+    input_path: str | None = typer.Option(
+        None, "--input", "-i",
+        help="Input CSV (default: data/layerA/liquipedia/owc_mappool.csv).",
+    ),
+    output_path: str | None = typer.Option(
+        None, "--output", "-o",
+        help="Output verified CSV (default: data/layerA/liquipedia/owc_mappool_verified.csv).",
+    ),
+) -> None:
+    """Verify scraped mappool beatmap_ids against the live osu! API v2."""
+    from pathlib import Path
+    from .layerA.verify_mappool import verify_mappool_csv
+
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    out, counts = verify_mappool_csv(
+        input_path=Path(input_path) if input_path else None,
+        output_path=Path(output_path) if output_path else None,
+    )
+    typer.echo(f"Wrote {out}")
+    for status, n in sorted(counts.items()):
+        typer.echo(f"  {status:10s} {n}")
 
 
 if __name__ == "__main__":
