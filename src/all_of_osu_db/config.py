@@ -30,6 +30,15 @@ class Settings(BaseSettings):
     liquipedia_output_dir: Path = Path("data/layerA/liquipedia")
     liquipedia_min_request_interval_s: float = 30.0
 
+    osu_client_id: str = ""
+    osu_client_secret: str = ""
+    osu_api_base: str = "https://osu.ppy.sh/api/v2"
+    osu_api_token_url: str = "https://osu.ppy.sh/oauth/token"
+    osu_api_token_cache: Path = Path("data/layerA/osu_api_v2/_token.json")
+    osu_api_response_cache_dir: Path = Path("data/layerA/osu_api_v2/_cache")
+
+    liquipedia_sqlite_path: Path = Path("data/layerA/liquipedia/liquipedia.sqlite")
+
     @property
     def layer_a_url(self) -> str:
         pw = f":{self.layer_a_mysql_password}" if self.layer_a_mysql_password else ""
