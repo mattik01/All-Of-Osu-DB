@@ -39,7 +39,7 @@ PAGE_BASE = "https://liquipedia.net/osu/"
 OWC_ORDINAL_EDITIONS = ("1", "2", "3")
 OWC_FIRST_YEAR_EDITION = 2013
 
-MAPPOOL_SECTION_HEADINGS = {"mappool", "map pool", "maps", "map sets"}
+MAPPOOL_SECTION_HEADINGS = {"mappool", "mappools", "map pool", "map pools", "maps", "map sets"}
 
 
 @dataclass
@@ -158,37 +158,132 @@ def iter_owc_editions(through_year: int) -> Iterable[str]:
 
 
 def _find_mappool_section(wikitext: str):
-    """Return the level-2 Mappool section's parsed mwparserfromhell node, or None."""
+    """Return the Mappool section's parsed mwparserfromhell node, or None.
+
+    Tries level-2 first (modern OWC main pages), then falls back to level-3
+    (some Qualifier subpages nest `=== Mappool ===` inside `== About ==`).
+    """
     code = mwparserfromhell.parse(wikitext)
-    sections = code.get_sections(levels=[2], include_lead=False)
-    for section in sections:
-        headings = section.filter_headings()
-        if not headings:
-            continue
-        title = str(headings[0].title).strip().lower()
-        if title in MAPPOOL_SECTION_HEADINGS:
-            return section
+    for level in (2, 3):
+        for section in code.get_sections(levels=[level], include_lead=False):
+            headings = section.filter_headings()
+            if not headings:
+                continue
+            title = str(headings[0].title).strip().lower()
+            if title in MAPPOOL_SECTION_HEADINGS:
+                return section
     return None
 
 
 def _split_into_rounds(mappool_section) -> list[tuple[str, str]]:
     """Split a Mappool section into (round_name, round_wikitext) pairs.
 
-    Round headings are level-3 inside the level-2 Mappool section. If no
-    level-3 headings exist (some older editions or qualifier-only pages),
-    the entire section is returned under a single "Mappool" round.
+    Modern OWC pages structure rounds via Liquipedia's `{{Tabs dynamic}}`
+    template (with `name1`..`nameN` parameters) plus `{{Tabs dynamic/tab|N}}`
+    body markers, terminated by `{{Tabs dynamic/end}}`. Older editions or
+    qualifier subpages may instead use level-3 wiki sub-headings, or be
+    completely flat. We try the Tabs-dynamic walker first, fall back to
+    sub-headings, and finally to "the whole section is one round".
     """
-    rounds: list[tuple[str, str]] = []
+    section_text = str(mappool_section)
+
+    tab_rounds = _split_tabs_dynamic(section_text)
+    if tab_rounds:
+        return tab_rounds
+
     sub_sections = mappool_section.get_sections(levels=[3], include_lead=False)
-    if not sub_sections:
-        return [("Mappool", str(mappool_section))]
-    for sub in sub_sections:
-        headings = sub.filter_headings()
-        if not headings:
+    if sub_sections:
+        rounds: list[tuple[str, str]] = []
+        for sub in sub_sections:
+            headings = sub.filter_headings()
+            if not headings:
+                continue
+            round_name = str(headings[0].title).strip()
+            body = str(sub).split(str(headings[0]), 1)[-1]
+            rounds.append((round_name, body))
+        if rounds:
+            return rounds
+
+    return [("Mappool", section_text)]
+
+
+_TAB_OPEN_RE = re.compile(r"\{\{Tabs dynamic(?=[\s|])[^{}]*?\}\}")
+_TAB_MARKER_RE = re.compile(r"\{\{Tabs dynamic/tab\|(\d+)\}\}")
+_TAB_END_RE = re.compile(r"\{\{Tabs dynamic/end\}\}")
+
+
+def _split_tabs_dynamic(section_text: str) -> list[tuple[str, str]]:
+    """Walk a `{{Tabs dynamic}}` block at the *outermost* level.
+
+    Returns [(round_name, round_body), ...] or [] if no top-level Tabs block
+    is found. Round names come from the outer template's `nameN` parameters;
+    bodies are the section text between consecutive `{{Tabs dynamic/tab|N}}`
+    markers at depth 1, stopping at the matching `{{Tabs dynamic/end}}`.
+
+    Depth-aware: nested `{{Tabs dynamic}}` blocks (used for mod brackets
+    NM/HD/HR/DT/FM/TB inside each round) are skipped over so their tabs and
+    end markers don't break round boundaries. The inner Tabs scaffolding
+    stays inline in the round body — the plain-bullet parser ignores
+    non-bullet lines.
+    """
+    open_m = _TAB_OPEN_RE.search(section_text)
+    if open_m is None:
+        return []
+    outer_tpl_str = open_m.group(0)
+
+    names: dict[int, str] = {}
+    for param in mwparserfromhell.parse(outer_tpl_str).filter_templates()[0].params:
+        key = str(param.name).strip().lower()
+        nm = re.fullmatch(r"name(\d+)", key)
+        if nm:
+            names[int(nm.group(1))] = str(param.value).strip()
+    if not names:
+        return []
+
+    body = section_text[open_m.end():]
+
+    depth = 1
+    pos = 0
+    markers: list[tuple[int, int, int]] = []
+    outer_end: int | None = None
+    while pos < len(body):
+        next_open = _TAB_OPEN_RE.search(body, pos)
+        next_tab = _TAB_MARKER_RE.search(body, pos)
+        next_end = _TAB_END_RE.search(body, pos)
+        candidates = [
+            (m.start(), kind, m)
+            for kind, m in (("open", next_open), ("tab", next_tab), ("end", next_end))
+            if m is not None
+        ]
+        if not candidates:
+            break
+        candidates.sort(key=lambda c: c[0])
+        _, kind, m = candidates[0]
+        if kind == "open":
+            depth += 1
+            pos = m.end()
+        elif kind == "tab":
+            if depth == 1:
+                markers.append((int(m.group(1)), m.start(), m.end()))
+            pos = m.end()
+        else:  # end
+            depth -= 1
+            if depth == 0:
+                outer_end = m.start()
+                break
+            pos = m.end()
+
+    if not markers:
+        return []
+    body_end = outer_end if outer_end is not None else len(body)
+
+    rounds: list[tuple[str, str]] = []
+    for i, (idx, _ms, me) in enumerate(markers):
+        round_name = names.get(idx)
+        if round_name is None:
             continue
-        round_name = str(headings[0].title).strip()
-        body = str(sub).split(str(headings[0]), 1)[-1]
-        rounds.append((round_name, body))
+        end_of_round = markers[i + 1][1] if i + 1 < len(markers) else body_end
+        rounds.append((round_name, body[me:end_of_round]))
     return rounds
 
 
@@ -282,6 +377,73 @@ def scrape_edition(
             })
 
     return manifest
+
+
+CSV_COLUMNS = (
+    "tournament",
+    "tournament_slug",
+    "round",
+    "slot",
+    "slot_category",
+    "slot_index",
+    "mod_set",
+    "beatmap_artist",
+    "beatmap_title",
+    "beatmap_difficulty",
+    "beatmap_id",
+    "beatmapset_id",
+    "source_url",
+    "source_revision",
+    "parser_version",
+    "scraped_at",
+)
+
+
+def export_owc_csv(
+    *,
+    settings: Settings | None = None,
+    output_path: Path | None = None,
+    include_unknown: bool = False,
+) -> tuple[Path, int]:
+    """Flatten every per-round JSON under `osu_world_cup/` into one CSV.
+
+    Walks `<liquipedia_output_dir>/osu_world_cup/<edition>/<round>.json`,
+    concatenates all `entries[]` rows, and writes a CSV at `output_path`
+    (default: `<liquipedia_output_dir>/owc_mappool.csv`).
+
+    `include_unknown` controls whether parser warning rows (slot=UNKNOWN)
+    are included. Default False so the CSV only contains real picks.
+
+    Returns (output_path, row_count).
+    """
+    import csv
+
+    settings = settings or Settings()
+    base = Path(settings.liquipedia_output_dir) / "osu_world_cup"
+    if not base.exists():
+        raise FileNotFoundError(
+            f"No scraped data at {base}. Run `all-of-osu layerA liquipedia owc` first."
+        )
+
+    out = output_path or (Path(settings.liquipedia_output_dir) / "owc_mappool.csv")
+    out.parent.mkdir(parents=True, exist_ok=True)
+
+    files = sorted(base.rglob("*.json"))
+    rows: list[dict] = []
+    for path in files:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        for entry in payload.get("entries", []):
+            if not include_unknown and entry.get("slot") == "UNKNOWN":
+                continue
+            rows.append({col: entry.get(col) for col in CSV_COLUMNS})
+
+    with out.open("w", encoding="utf-8", newline="") as fh:
+        writer = csv.DictWriter(fh, fieldnames=list(CSV_COLUMNS))
+        writer.writeheader()
+        writer.writerows(rows)
+
+    log.info("Wrote %d rows to %s", len(rows), out)
+    return out, len(rows)
 
 
 def scrape_owc(

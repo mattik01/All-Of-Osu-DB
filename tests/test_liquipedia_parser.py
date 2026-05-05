@@ -96,6 +96,21 @@ def test_legacy_bare_beatmap_url_only_returns_beatmap_id() -> None:
     assert nm1.beatmap_difficulty == "Hard"
 
 
+def test_bold_wrapped_tiebreaker_link_parses() -> None:
+    fixture = (
+        "* '''TB''' : '''[https://osu.ppy.sh/beatmaps/4881796 "
+        "<nowiki>Camellia - Operation: Zenithfall (Mir) [FINAL MISSION]</nowiki>]'''\n"
+    )
+    entries = parse_round_wikitext(fixture, **COMMON_KWARGS)
+    assert len(entries) == 1
+    tb = entries[0]
+    assert tb.slot == "TB"
+    assert tb.beatmap_id == 4881796
+    assert tb.beatmap_artist == "Camellia"
+    assert tb.beatmap_title == "Operation: Zenithfall"
+    assert tb.beatmap_difficulty == "FINAL MISSION"
+
+
 def test_unknown_layout_emits_single_warning_row() -> None:
     entries = parse_round_wikitext(UNKNOWN_FIXTURE, **COMMON_KWARGS)
     assert len(entries) == 1

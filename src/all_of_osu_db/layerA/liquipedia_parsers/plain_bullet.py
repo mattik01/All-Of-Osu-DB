@@ -25,7 +25,9 @@ _SLOT_RE = re.compile(
         ([A-Z]{2}\d?|TB\d?)                     # slot label, e.g. NM1 or TB
         \s*(?:'''|\*\*)\s*                      # bold closer
         :?\s*                                   # optional colon
-        \[(\S+)\s+(.+?)\]\s*$                   # [URL display-text]
+        (?:'''|\*\*)?\s*                        # optional bold wrap around link (TB rows)
+        \[(\S+)\s+(.+?)\]                       # [URL display-text]
+        \s*(?:'''|\*\*)?\s*$                    # optional bold close + EOL
     """,
     re.VERBOSE,
 )
