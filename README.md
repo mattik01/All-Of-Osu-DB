@@ -108,7 +108,7 @@ Any future osu! project of mine that wants read-only access to beatmap / score
 | Source                   | Role                                | Cadence   | Status       |
 | ------------------------ | ----------------------------------- | --------- | ------------ |
 | data.ppy.sh MySQL dump   | Primary: beatmaps, scores, users    | Monthly   | v1 target    |
-| Liquipedia (osu! wiki)   | Tournament mappools (OWC first)     | On demand | Phase 1: OWC |
+| Liquipedia (osu! wiki)   | Tournament mappools (OWC first)     | On demand | Layer A SQLite + Layer B `tournament_mappool` |
 | osu! API v2              | Incremental top-ups between dumps   | On demand | Future       |
 | osu!track API            | Player rank/performance history     | On demand | Future       |
 | catboy.best / osu.direct | Beatmap audio/asset mirror          | On demand | Future       |
@@ -163,7 +163,9 @@ All-Of-Osu-DB/
 │   ├─ schema.md                   ← Layer B columns + Layer A provenance
 │   └─ runbook.md                  ← monthly refresh playbook
 ├─ sql/
+│   ├─ layerA_liquipedia.sql       ← SQLite DDL for tournament_pick (Liquipedia mirror)
 │   ├─ layerB_schema.sql           ← Postgres DDL for Layer B tables
+│   ├─ layerB_tournament_mappool.sql ← Postgres DDL for the OWC mappool projection
 │   └─ layerB_views.sql            ← popularity_v + convenience views
 ├─ src/all_of_osu_db/
 │   ├─ __init__.py
@@ -172,12 +174,16 @@ All-Of-Osu-DB/
 │   ├─ layerA/
 │   │   ├─ __init__.py
 │   │   ├─ ppy_dump.py             ← thin wrapper around `osu-data` CLI
-│   │   ├─ liquipedia.py           ← OWC mappool scraper (JSON output, v1)
+│   │   ├─ liquipedia.py           ← OWC mappool scraper (JSON output)
 │   │   ├─ liquipedia_parsers/     ← wikitext dispatcher + per-format parsers
-│   │   └─ (future) osu_api_v2.py, osu_track.py
+│   │   ├─ verify_mappool.py       ← osu! API v2 verification of scraped beatmap_ids
+│   │   ├─ liquipedia_load.py      ← verified CSV → Layer A SQLite (tournament_pick)
+│   │   ├─ osu_api_v2.py           ← OAuth2 client + batched /beatmaps lookup
+│   │   └─ (future) osu_track.py
 │   ├─ etl/
 │   │   ├─ __init__.py
-│   │   └─ beatmap_reference.py    ← MySQL(ppy_dump) → Postgres(Layer B)
+│   │   ├─ beatmap_reference.py    ← MySQL(ppy_dump) → Postgres(Layer B)
+│   │   └─ tournament_mappool.py   ← SQLite(liquipedia) → Postgres(Layer B)
 │   └─ validate.py                 ← post-ETL sanity checks
 └─ tests/
     └─ test_etl_shape.py           ← fixtures + ETL transform tests
@@ -196,12 +202,16 @@ all-of-osu export-parquet         # optional Parquet artifact from Layer B
 all-of-osu layerA ppy-dump \
     --mode osu --version top_10000 --ymd 2026_04_01
 
-# Liquipedia tournament mappools (Layer A, JSON output)
-all-of-osu layerA liquipedia owc                       # all OWC editions
+# Liquipedia tournament mappools (Layer A scrape → Layer B projection)
+all-of-osu layerA liquipedia owc                       # all OWC editions, scrape JSONs
 all-of-osu layerA liquipedia owc --year 2024
 all-of-osu layerA liquipedia owc --year 2024 --no-qualifier
 all-of-osu layerA liquipedia owc --refresh-cache
 all-of-osu layerA liquipedia owc --dry-run
+all-of-osu layerA liquipedia export-csv                # flatten JSONs to one CSV
+all-of-osu layerA liquipedia verify-mappool            # API-verify + CSV + Layer A SQLite
+all-of-osu layerA liquipedia load-sqlite               # load verified CSV into SQLite (standalone)
+all-of-osu etl tournament-mappool                      # Layer A SQLite → Layer B Postgres
 ```
 
 Implement with `typer` or `click`; exact choice when coding begins.
@@ -250,6 +260,45 @@ Views (`sql/layerB_views.sql`):
 - `ranked_std_popular_v` — `beatmap_reference` filtered to `mode=0` and
   `status IN (1,2,4)`, ordered by `popularity_rank`.
 - `by_md5_v` — convenience single-row lookup shape.
+
+---
+
+## 8.1 Layer B — `tournament_mappool` (Liquipedia projection)
+
+Curated slice of the Liquipedia OWC scraper output. One row per pick
+(unique by `(tournament_slug, round, slot)`). Filtered to picks where the
+osu! API v2 verifier resolved the beatmap — `missing` and `no_id` rows
+from Layer A are excluded; `mismatch` rows are kept (the beatmap_id is
+still valid, only post-tournament metadata renames diverged).
+
+| Column            | Type          | Source (Layer A `tournament_pick`) | Notes                                          |
+| ----------------- | ------------- | ---------------------------------- | ---------------------------------------------- |
+| `tournament_slug` | `text PK`     | `tournament_slug`                  | Stable id e.g. `Osu_World_Cup/2024`.           |
+| `round`           | `text PK`     | `round`                            | E.g. `Grand Finals`, `Round of 32`, `Mappool`. |
+| `slot`            | `text PK`     | `slot`                             | E.g. `NM1`, `HD2`, `TB`.                       |
+| `tournament`      | `text`        | `tournament`                       | Display name, e.g. `osu! World Cup 2024`.     |
+| `slot_category`   | `text`        | `slot_category`                    | `NM \| HD \| HR \| DT \| FM \| TB`.            |
+| `slot_index`      | `smallint`    | `slot_index`                       | 1, 2, 3, … or `NULL` for `TB`.                 |
+| `mod_set`         | `text`        | `mod_set`                          | Usually equals `slot_category`.                |
+| `beatmap_id`      | `bigint NN`   | `api_beatmap_id`                   | osu! API verified to exist.                    |
+| `beatmapset_id`   | `bigint`      | `api_beatmapset_id`                |                                                |
+| `artist`          | `text`        | `api_artist`                       | osu!-side metadata (authoritative).            |
+| `title`           | `text`        | `api_title`                        |                                                |
+| `difficulty`      | `text`        | `api_difficulty`                   |                                                |
+| `ranked_status`   | `text`        | `api_ranked_status`                | `ranked \| loved \| qualified \| graveyard \| …`. |
+| `source_url`      | `text`        | `source_url`                       | Liquipedia page back-reference.                |
+| `last_refreshed`  | `timestamptz` | ETL clock                          | Set on each `etl tournament-mappool` run.      |
+
+Indexes: PK; `(beatmap_id)`; `(tournament_slug)`; `(mod_set)`.
+
+Layer A columns *not* included in this projection (kept in the SQLite
+mirror for forensic queries): `liquipedia_artist/title/difficulty`,
+`parser_version`, `source_revision`, `scraped_at`, `verified_at`,
+`verify_status`. To inspect mismatches or unresolved picks, query the
+SQLite directly.
+
+Provenance: see `data/layerA/liquipedia/liquipedia.sqlite::tournament_pick`
+and `docs/OWC/Mappool/`.
 
 ---
 
@@ -421,11 +470,19 @@ When a second source needs to land in Layer A:
 Keep each source isolated enough that removing it is a one-file deletion.
 
 **Wiki / web sources** (e.g. Liquipedia for tournament mappools) deviate from
-the "MySQL schema per source" pattern: they have no SQL dump to mirror. For
-v1 such sources sink to a JSON file cache under `data/layerA/<source>/` and
-delay any MySQL/Postgres schema commitment until the shape stabilises across
-real data. Document the deviation in `docs/sources.md`. The OWC scraper
-(`src/all_of_osu_db/layerA/liquipedia.py`) is the first instance of this.
+the "MySQL schema per source" pattern: they have no SQL dump to mirror.
+- v1: sink to a JSON file cache under `data/layerA/<source>/` while the shape stabilises across real data.
+- v2: once stable, promote to a local **SQLite** sink (still Layer A; lives in
+  the same `data/layerA/<source>/` directory). SQLite is preferred over the
+  osu-data MySQL container because the wiki source has its own cadence and
+  shouldn't get nuked when the monthly ppy-dump refresh wipes the MySQL
+  container. Schema lives in `sql/layerA_<source>.sql`.
+
+The OWC scraper (`src/all_of_osu_db/layerA/liquipedia.py` + `liquipedia_load.py`
++ `verify_mappool.py`) is the first instance of this pattern. Layer A artifact
+is `data/layerA/liquipedia/liquipedia.sqlite` with one table `tournament_pick`
+(every scraped row preserved, including audit rows). The corresponding Layer B
+projection (`tournament_mappool`) is documented in §8.1.
 
 ---
 

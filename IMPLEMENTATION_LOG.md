@@ -84,6 +84,70 @@ The unit tests already cover (1)/(2) for the parser; the rest are integration ch
 
 ## What's next
 
+### Phase 1.5 — API verification + Layer A SQLite + Layer B Postgres (DONE 2026-05-05)
+
+Shipped after the initial Phase 1 in the same calendar day. End-to-end pipeline:
+
+```
+Liquipedia wikitext
+   → JSONs (per round)                    data/layerA/liquipedia/osu_world_cup/<edition>/<round>.json
+   → owc_mappool.csv                      flat scrape (1,501 rows)
+   → owc_mappool_verified.csv             API-verified (1412 match / 66 mismatch / 23 missing)
+   → liquipedia.sqlite::tournament_pick   Layer A raw mirror, 1,501 rows preserved verbatim
+   → tournament_mappool                   Layer B Postgres curated, 1,478 rows, 14 columns
+```
+
+**Round-splitter fixes** (post-Phase-1, before verification):
+- `MAPPOOL_SECTION_HEADINGS` extended to include `mappools` (plural) — modern OWC main pages use the plural form.
+- `_split_into_rounds` rewritten with depth-aware `_split_tabs_dynamic` walker; modern OWC pages encode rounds via `{{Tabs dynamic}}` + `{{Tabs dynamic/tab|N}}` markers (with nested `{{Tabs dynamic}}` blocks for mod brackets), not via `=== ... ===` wiki sub-headings as v1 assumed. Fallback chain: tabs → sub-headings → flat section.
+- `_find_mappool_section` falls back to level-3 headings — 2023/2024 Qualifier subpages nest `=== Mappool ===` inside `== About ==`.
+- `plain_bullet._SLOT_RE` allows optional `'''…'''` bold-wrap around the link itself (Grand Finals tiebreaker rows ship as `* '''TB''' : '''[URL <nowiki>...</nowiki>]'''`).
+
+These four fixes turned the Phase 1 scrape from 11 entries / 1 round into 1,501 entries / 97 rounds across 16 editions.
+
+**API verifier** (`src/all_of_osu_db/layerA/osu_api_v2.py` + `verify_mappool.py`):
+- OAuth2 client-credentials grant. Token + per-beatmap responses cached on disk under `data/layerA/osu_api_v2/`.
+- Batched `GET /api/v2/beatmaps?ids[]=…` (50 ids per call); 1,501 picks → 29 batches → ~5 seconds wall time on a cold cache.
+- Match classifier normalises `(artist, title, difficulty)` for case/whitespace/punctuation/diacritics before comparing. Status enum: `match | mismatch | missing | no_id`.
+- Output: `data/layerA/liquipedia/owc_mappool_verified.csv` (24 columns).
+
+**Layer A SQLite** (`sql/layerA_liquipedia.sql`, `src/all_of_osu_db/layerA/liquipedia_load.py`):
+- Single table `tournament_pick`, PK `(tournament_slug, round, slot)`. All 1,501 rows land — including `mismatch`/`missing`/`no_id` audit rows. Both Liquipedia-side (`liquipedia_artist/title/difficulty`) and osu!-API-side (`api_artist/title/difficulty/ranked_status`) columns kept verbatim.
+- Why SQLite, not osu-data MySQL: osu-data wipes its container on each `refresh`; Liquipedia data has its own cadence and shouldn't be coupled to the ppy-dump cycle. SQLite also avoids requiring downstream consumers to spin up the osu-data container.
+- README §12 updated to document the v1→v2 progression (JSON cache → local SQLite once schema stabilises).
+
+**Layer B Postgres** (`sql/layerB_tournament_mappool.sql`, `src/all_of_osu_db/etl/tournament_mappool.py`):
+- Curated 14-column projection of Layer A — drops `liquipedia_*`, `parser_version`, `source_revision`, `scraped_at`, `verified_at`, `verify_status`. Renames `api_*` to bare names (`artist`, `title`, etc.). Filters to `verify_status IN ('match', 'mismatch')`.
+- Upsert on `(tournament_slug, round, slot)` — idempotent across refreshes.
+- Documented as new contract in README §8.1.
+- Lives in the same Postgres as `beatmap_reference` (consumer-facing, port 5433 in `.env` to avoid colliding with native Windows `postgresql-x64-18` on 5432).
+
+**CLI surface** added:
+```
+all-of-osu layerA liquipedia export-csv
+all-of-osu layerA liquipedia verify-mappool
+all-of-osu layerA liquipedia load-sqlite
+all-of-osu etl tournament-mappool
+```
+
+`verify-mappool` chains `load-sqlite` automatically so the typical "refresh after a new scrape" flow is two commands: `liquipedia owc` then `liquipedia verify-mappool`. The Layer B ETL is run separately when the user wants to publish to the consumer Postgres.
+
+**Tests**: 35 passing (parser 9, round splitter 5, classifier 7, SQLite loader 6, Layer B ETL 3, plus the originals). The Layer B ETL test mocks `_write_to_postgres` so it doesn't require a running Postgres.
+
+**Sample queries** (the user's primary use case is one of these):
+```sql
+-- Layer B (consumer-facing): "all valid OWC picks with their tournament mods"
+SELECT tournament, round, slot, mod_set, beatmap_id
+FROM tournament_mappool
+WHERE tournament_slug = 'Osu_World_Cup/2024'
+ORDER BY round, slot;
+
+-- Layer A (audit): unresolved IDs for review
+SELECT tournament_slug, round, slot, beatmap_id, liquipedia_artist, liquipedia_title
+FROM tournament_pick
+WHERE verify_status IN ('missing', 'no_id', 'mismatch');
+```
+
 ### Phase 2 — expand scraper to all S-Tier osu!standard tournaments
 
 - Iterate `https://liquipedia.net/osu/S-Tier_Tournaments`; filter out tournament names matching `(?i)taiko|catch|mania`.
